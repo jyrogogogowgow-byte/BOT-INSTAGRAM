@@ -104,8 +104,8 @@ app.post('/webhook', async (req, res) => {
 // 🆕 التحقق هل المستخدم متابع الحساب
 async function isUserFollowingMe(userId) {
   try {
-    const response = await axios.get(`https://graph.facebook.com/v21.0/${FACEBOOK_PAGE_ID}/followers`, {
-      params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }
+    const response = await axios.get(`https://graph.instagram.com/v21.0/me/followers`, {
+      params: { access_token: PAGE_ACCESS_TOKEN }
     });
 
     if (response.data && response.data.data) {
