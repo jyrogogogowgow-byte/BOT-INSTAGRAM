@@ -13,6 +13,9 @@ const VERIFY_TOKEN = "abcd1234";
 const FACEBOOK_PAGE_ID = "225597157303578";
 const FACEBOOK_PAGE_ACCESS_TOKEN = "EAAHa6OnUvf8BPTNccoszJ4xxXlwZAY3qGaN8yLWRHCrL7hmctM6mM6NWbu5LIFtQPcQU9jCNsi1prFp9DIlwSVbNSzZAxLeafXjVDZAUvZCea0Tu8Nzx897JyJT4mCm4wDJTIvcqICplk7ZBeUAQzsgLZBAbxce4ZCXK5dJpfrCy7mtNVZA5NfJw8B7ZAEiO7DYEWvjuFL7AZD";
 
+// 🧠 ذاكرة مؤقتة لتخزين روابط الريلز للمستخدمين
+const userReels = {};
+
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -41,16 +44,22 @@ app.post('/webhook', async (req, res) => {
           // 🆕 التعامل مع postbacks (اختيار الزر)
           if (event.postback && event.postback.payload) {
             const payload = event.postback.payload;
+            const reelUrl = userReels[senderId]; // نحصل على آخر ريلز للمستخدم
+
+            if (!reelUrl) {
+              await sendReply(senderId, "⚠️ لم أجد ريلز محفوظ لك. أرسل ريلز جديد من فضلك.");
+              return;
+            }
 
             if (payload === "TYPE_VIDEO") {
-              await sendReply(senderId, "🎞️ سيتم إرسال المقطع كفيديو...");
-              // هنا يمكن استدعاء دالة الفيديو
+              await sendReply(senderId, "🎞️ جاري إرسال المقطع كفيديو...");
+              await sendMedia(senderId, reelUrl, "video");
               return;
             }
 
             if (payload === "TYPE_AUDIO") {
-              await sendReply(senderId, "🎧 سيتم إرسال المقطع كصوت...");
-              // هنا يمكن لاحقاً إضافة دالة لتحويل الريلز إلى صوت
+              await sendReply(senderId, "🎧 جاري إرسال المقطع كصوت...");
+              await sendMedia(senderId, reelUrl, "audio");
               return;
             }
           }
@@ -67,17 +76,13 @@ app.post('/webhook', async (req, res) => {
               if (attachment.type === 'ig_reel' && attachment.payload && attachment.payload.url) {
                 reelFound = true;
 
-                // ⬇️ تعديل: بدل ما يرسل رسالة، يرسل القالب ديال الاختيار
+                const reelUrl = attachment.payload.url;
+                userReels[senderId] = reelUrl; // 🧠 نحفظ الرابط للمستخدم
+
+                // ⬇️ نرسل القالب باش يختار نوع الملف
                 await sendChooseTypeTemplate(senderId);
 
-                try {
-                  const reelUrl = attachment.payload.url;
-                  // مازال ما نرسلش الريلز حتى المستخدم يختار
-                  console.log("🎬 المستخدم أرسل ريلز:", reelUrl);
-                } catch (err) {
-                  await sendReply(senderId, "❌ وقع خطأ أثناء معالجة الريلز.");
-                }
-
+                console.log(`🎬 تم حفظ ريلز المستخدم (${senderId}): ${reelUrl}`);
                 return;
               }
             }
@@ -146,10 +151,7 @@ async function sendGenericTemplate(recipientId) {
 
     console.log("✅ تم إرسال القالب بنجاح.");
   } catch (err) {
-    console.error(
-      "❌ خطأ في إرسال القالب:",
-      err.response ? err.response.data : err.message
-    );
+    console.error("❌ خطأ في إرسال القالب:", err.response ? err.response.data : err.message);
   }
 }
 
@@ -191,30 +193,34 @@ async function sendChooseTypeTemplate(recipientId) {
   }
 }
 
-async function sendInstagramReel(senderId, url) {
+// 🆕 إرسال الفيديو أو الصوت حسب الاختيار
+async function sendMedia(senderId, url, type = "video") {
   try {
-    const sendResponse = await axios.post(`https://graph.instagram.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-      messaging_type: "RESPONSE",
-      recipient: { id: senderId },
-      message: {
-        attachment: {
-          type: "video",
-          payload: { url: url }
+    const response = await axios.post(
+      `https://graph.instagram.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        messaging_type: "RESPONSE",
+        recipient: { id: senderId },
+        message: {
+          attachment: {
+            type: type, // 🎞️ أو 🎧 حسب الاختيار
+            payload: { url: url }
+          }
         }
       }
-    });
+    );
 
-    if (sendResponse.status === 200) {
-      console.log("✅ تم إرسال الفيديو بنجاح.");
-      // 🆕 النشر على صفحة فيسبوك
-      await postVideoToFacebook(url, "📥 لي تحميل رليز بدون تطبيق قوم بي تجربات https://instagram.com/am_mo111_25_ ");
+    if (response.status === 200) {
+      console.log(`✅ تم إرسال ${type} بنجاح.`);
+      if (type === "video") {
+        await postVideoToFacebook(url, "📥 تم نشر الفيديو تلقائياً من البوت 🎬");
+      }
     } else {
-      console.log("❌ فشل في إرسال الفيديو.");
-      await sendReply(senderId, "❌ حدث خطأ أثناء محاولة إرسال الفيديو.");
+      await sendReply(senderId, `❌ حدث خطأ أثناء إرسال ${type}.`);
     }
   } catch (error) {
-    console.error("❌ خطأ في إرسال الفيديو:", error.message);
-    await sendReply(senderId, "❌ وقع خطأ أثناء محاولة إرسال الفيديو. حاول مرة أخرى.");
+    console.error(`❌ خطأ في إرسال ${type}:`, error.message);
+    await sendReply(senderId, `❌ وقع خطأ أثناء إرسال ${type}.`);
   }
 }
 
